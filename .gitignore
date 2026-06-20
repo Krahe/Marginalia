@@ -1,0 +1,15 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Node
+node_modules/
+
+# The runtime ledger lives OUTSIDE the skill (~/.claude/marginalia/store.jsonl) and must
+# never be published — but guard defensively in case a store ever lands inside the repo.
+store.jsonl
+**/store.jsonl
+marginalia/
+*.local.*

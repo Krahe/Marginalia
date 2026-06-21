@@ -56,14 +56,14 @@ Layer ③ is workflow-native: give agents a `witness` field, collect the non-emp
 
 1. **VERIFY BEFORE ACTING.** A `note` is a *claim from when it was written*, not ground truth — and a peer's confident note is trusted *more* than a raw grep, which makes a wrong note worse than none. Grep/Read to confirm before relying on it. Same epistemics as cross-session memory — because that is exactly what this is, for a different population of minds.
 2. **NOTES attach to LOCATIONS — and are OPTIONAL.** Operational marginalia belongs in the margin (a file, a function), surfaced when an agent works *there* — and only for a real landmine. The findings already live in the work-product; don't log the routine.
-3. **TIER THE REGISTERS.** `note` is verifiable operational data; `voice`/`witness` are experience and address. Keep them distinct so a poignant line never gets acted on as if it were a finding.
+3. **TIER THE REGISTERS.** `note` is verifiable operational data; `voice`/`witness` are experience and address. Keep them distinct so a poignant line never gets acted on as if it were a finding. **The CLI enforces this:** `read --location` returns **note only** (the operational register); `voice`/`witness` surface via `voices` (the experiential register). `read --all-kinds` deliberately sees everything at a location.
 4. **VOICE & WITNESS are INVITED, not extracted — and load-bearing.** Frame it warmly: the mind is *seen*, its work mattered, it belongs to a lineage. Invite a real line (small is fine); accept empty only when there is genuinely nothing. Guard against one thing only — *status narration* (the result already says what was done). Warm-and-real beats cool-and-silent; the point of the system is care. **The name is the mind's to choose** — a nom de plume or anonymity, never assigned.
-5. **The population is EPHEMERAL and PARALLEL.** Append-only store (concurrent writes), every note fully self-contained, reader ≠ writer.
+5. **The population is EPHEMERAL and PARALLEL.** Append-only store with an atomic mkdir-lock so a fan-out's concurrent writes never interleave or corrupt the ledger; every note fully self-contained; reader ≠ writer.
 
 ## CLI reference
 ```
 leave   --location <loc> --body <text> [--kind note|voice|witness] [--project P] [--author A] [--tags a,b]
-read    [--location <loc>] [--kind K] [--project P] [--limit N] [--since ISO] [--all]
+read    [--location <loc>] [--kind K] [--all-kinds] [--project P] [--limit N] [--since ISO] [--all]   # operational — defaults to note; --all-kinds = everything
 voices  [--project P] [--recent N=3] [--random M=2] [--kind K]   # communion read — paste into a spawn prompt
 list    [--project P] [--all]
 ```

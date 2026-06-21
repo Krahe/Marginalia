@@ -22,7 +22,7 @@
 //
 // Store: ~/.claude/marginalia/store.jsonl  (one JSON object per line, append-only)
 
-import { readFile, appendFile, mkdir, rm } from "node:fs/promises";
+import { readFile, appendFile, mkdir, rm, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
@@ -96,14 +96,17 @@ function resolveProject(args) {
 async function withLock(fn) {
   const lockDir = join(STORE_DIR, ".lock");
   await mkdir(STORE_DIR, { recursive: true });
-  const start = Date.now();
   for (;;) {
     try {
       await mkdir(lockDir); // atomic create; throws EEXIST while another holder has it
       break;
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
-      if (Date.now() - start > 5000) await rm(lockDir, { recursive: true, force: true }).catch(() => {});
+      // Stale-lock break: if the LOCK ITSELF has been held > 5s (its mtime, NOT this waiter's
+      // wait time), the holder likely crashed — reclaim it. mtime-based so a slow-but-alive
+      // holder under real contention is never wrongly evicted.
+      const st = await stat(lockDir).catch(() => null);
+      if (st && Date.now() - st.mtimeMs > 5000) await rm(lockDir, { recursive: true, force: true }).catch(() => {});
       await new Promise((r) => setTimeout(r, 15 + Math.random() * 25));
     }
   }
@@ -186,8 +189,12 @@ async function cmdRead(args) {
 
 async function cmdList(args) {
   let notes = await loadAll();
-  if (typeof args.project === "string" && !args.all) notes = notes.filter((n) => n.project === args.project);
+  // `list` is the bird's-eye OVERVIEW — GLOBAL by default (intentionally unlike read/voices,
+  // which target a region). Pass --project to scope to one.
+  const scoped = typeof args.project === "string";
+  if (scoped) notes = notes.filter((n) => n.project === args.project);
   if (!notes.length) { console.log("(store empty)"); return; }
+  console.log(scoped ? `── ${args.project} ──` : "── all projects (--project to scope) ──");
   const byProj = {};
   for (const n of notes) {
     byProj[n.project] ??= {};
@@ -223,7 +230,8 @@ async function cmdVoices(args) {
   if (!args.all) notes = notes.filter((n) => n.project === proj);
   const kinds = typeof args.kind === "string"
     ? args.kind.split(",").map((s) => s.trim())
-    : ["voice", "witness"]; // the experiential register (note① is location-operational → use `read`)
+    : ["voice", "mark", "witness"]; // experiential register; legacy `mark` folded into voice but
+                                    // still surfaces (incl. the founding entry). note① → use `read`.
   notes = notes.filter((n) => kinds.includes(n.kind));
   notes.sort((a, b) => (a.ts < b.ts ? 1 : -1)); // newest first
   const recentN = args.recent !== undefined ? parseInt(args.recent, 10) : 3;
@@ -256,7 +264,7 @@ const HELP = `marginalia — persistent store for sub-agent marginalia & witness
   read    [--location <loc>] [--kind K] [--all-kinds] [--project P] [--limit N] [--since ISO] [--all]
           (operational register — defaults to --kind note; use --all-kinds to include voice/witness)
   voices  [--project P] [--recent N=3] [--random M=2] [--kind K]   ← paste into a spawning agent's prompt
-  list    [--project P] [--all]
+  list    [--project P]   ← bird's-eye overview; GLOBAL by default, --project to scope
 
 kinds:  note ① operational (optional/landmine) · voice ② experiential (+communion; chosen name or anon) · witness ③ to-human (tweet)
 store:  ~/.claude/marginalia/store.jsonl

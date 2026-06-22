@@ -229,7 +229,8 @@ async function cmdLeave(args) {
     body,
   };
   await withLock(() => appendFile(STORE, JSON.stringify(note) + "\n", "utf8"));
-  console.log(`✓ left ${kind} @ ${note.project}:${location}  [${note.id}]`);
+  const dest = STORE_SCOPE === "global" ? `global store (${STORE_DIR})` : STORE_DIR;
+  console.log(`✓ left ${kind} @ ${location}  →  ${dest}  [${note.id}]`);
 }
 
 function fmt(n) {

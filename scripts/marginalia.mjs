@@ -22,13 +22,93 @@
 //
 // Store: ~/.claude/marginalia/store.jsonl  (one JSON object per line, append-only)
 
-import { readFile, appendFile, mkdir, rm, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { readFile, appendFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, basename } from "node:path";
+import { join, basename, dirname, resolve } from "node:path";
 
-const STORE_DIR = join(homedir(), ".claude", "marginalia");
-const STORE = join(STORE_DIR, "store.jsonl");
+// ── Store location ──────────────────────────────────────────────────────────
+// Per-project by default: the store is the `.claude/marginalia/` of the repo you
+// are STANDING IN, found by walking up from cwd to the nearest repo root. The
+// DIRECTORY is the boundary — an agent can only read/write the lineage of the
+// project it's in, so a note can't leak across project lines. (The old design kept
+// one global file and scoped by a fallible `project` FIELD; this makes the boundary
+// physical.) The shared global store still exists but is OPT-IN ONLY (--global):
+// there is NO silent fallback, so sensitive notes never accidentally pool somewhere
+// other projects can read.
+const GLOBAL_DIR = join(homedir(), ".claude", "marginalia");
+let STORE_DIR;    // resolved at startup from cwd / flags
+let STORE;        // <STORE_DIR>/store.jsonl
+let STORE_SCOPE;  // "project" | "global"
+let STORE_ROOT;   // repo root when scope === "project"
+
+// Path equality, normalized (Windows is case- and separator-insensitive).
+const samePath = (a, b) => {
+  const ra = resolve(a), rb = resolve(b);
+  return process.platform === "win32" ? ra.toLowerCase() === rb.toLowerCase() : ra === rb;
+};
+
+// Walk up from `start` to the nearest git repo root (a dir containing `.git`). We anchor on
+// `.git` ONLY. A `.claude/marginalia` MARKER is deliberately NOT a discovery signal, because:
+//   • the global store ~/.claude/marginalia matches that exact pattern, so a marker-walk could
+//     climb into it and silently treat the SHARED store as a "project" — a red-team reached it
+//     via a movable $HOME (USERPROFILE) and a non-native cwd; and
+//   • a marker dropped DEEPER than a repo's .git would fork the repo's lineage into disjoint
+//     stores invisible to each other.
+// `.git` is the unambiguous, un-spoofable boundary. Home is never a repo, so the global store
+// is reachable ONLY via the explicit --global flag. (`start` is realpath'd by the caller, so
+// symlink aliases collapse to one physical lineage.) Non-git projects use --store explicitly.
+function findProjectRoot(start) {
+  let dir = start;
+  for (;;) {
+    if (existsSync(join(dir, ".git"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return null; // reached the filesystem root
+    dir = parent;
+  }
+}
+
+// Resolve the store dir. Default-DENY: if cwd isn't inside a project and --global
+// isn't passed, return null and let the caller error LOUDLY — rather than silently
+// pooling notes into the shared store (the leak/trap we refuse to build).
+function resolveStoreDir(args) {
+  if (args.global === true) return { dir: GLOBAL_DIR, scope: "global", root: null };
+  const explicitRoot =
+    typeof args["project-root"] === "string" ? args["project-root"]
+    : typeof args.store === "string" ? args.store
+    : null;
+  if (explicitRoot) return { dir: join(explicitRoot, ".claude", "marginalia"), scope: "project", root: explicitRoot };
+  let start = process.cwd();
+  try { start = realpathSync(start); } catch { /* path vanished mid-run; keep logical cwd */ }
+  const root = findProjectRoot(start);
+  if (!root) return null;
+  const dir = join(root, ".claude", "marginalia");
+  // Sentinel: the global store is NEVER an auto-resolved "project" — require explicit --global.
+  // (Defense-in-depth for the exotic case where $HOME itself is a git repo.)
+  if (samePath(dir, GLOBAL_DIR)) return null;
+  return { dir, scope: "project", root };
+}
+
+// Create the store dir on first write. For a PROJECT store, drop a self-contained
+// .gitignore (`*`) so the lineage never reaches git history unless the human
+// deliberately edits that one file — critical because `.claude/` is frequently a
+// TRACKED directory, so without this a `git add .claude` would sweep the store into
+// the repo (and, for a repo with a public remote, straight into the world).
+async function ensureStoreDir() {
+  await mkdir(STORE_DIR, { recursive: true });
+  if (STORE_SCOPE === "project") {
+    const gi = join(STORE_DIR, ".gitignore");
+    if (!existsSync(gi)) {
+      await writeFile(
+        gi,
+        "# marginalia: machine-local agent lineage — not committed by default.\n" +
+        "# Delete this file (or add `!exception` lines) to deliberately share these notes.\n" +
+        "*\n",
+        "utf8"
+      );
+    }
+  }
+}
 // Three kinds. note① operational ADDENDUM (optional, landmine-only) · voice② experiential
 // reflection — also where the communion read happens; signed with a chosen name or anonymous ·
 // witness③ the closing beat: one tweet-sized line to the human, in any register. The voice
@@ -46,9 +126,9 @@ const COLOR_ON = process.argv.includes("--no-color") ? false
   : !!process.stdout.isTTY;
 const paint = (code, s) => (COLOR_ON ? `\x1b[${code}m${s}\x1b[0m` : s);
 const KIND_PAINT = {
-  note:    (s) => paint("33", s),    // yellow — operational
-  voice:   (s) => paint("36", s),    // cyan — experiential
-  witness: (s) => paint("1;95", s),  // bold bright-magenta — the line to the human, made to POP
+  note:    (s) => paint("33", s),         // yellow — operational
+  voice:   (s) => paint("36", s),         // cyan — experiential
+  witness: (s) => paint("1;38;5;201", s), // bold vivid hot-magenta — the tweet to the human, made to POP
 };
 const paintKind = (kind, s) => (KIND_PAINT[kind] || ((x) => x))(s);
 const MARK = { note: "•", voice: "▸", witness: "✉" };
@@ -77,17 +157,17 @@ function newId() {
   return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
 }
 
-// Resolve the target project. A witness-agent caught early that silently inferring the
-// project from cwd lets an agent in the wrong directory scatter — or MISREAD — a mislabeled
-// region. The READ path is the magic, so a wrong-project read is as bad as a wrong write:
-// warn loudly on either when --project is implicit.
+// Resolve the project LABEL for a note's `project` field. With per-project stores the
+// directory already IS the boundary, so this is just self-description: derive it from
+// the repo ROOT (not cwd — basename(cwd) used to mis-infer "rules" when run from
+// dino-lair/src/rules, the wrong-region trap a witness-agent flagged). Only the global
+// store, which mixes projects, still needs an explicit --project and warns without one.
 function resolveProject(args) {
-  const explicit = typeof args.project === "string";
-  const project = explicit ? args.project : basename(process.cwd());
-  if (!explicit) {
-    console.error(`WARN: --project not specified; inferred "${project}" from cwd (${process.cwd()}). Pass --project explicitly — a wrong-project read or leave targets the wrong lineage.`);
-  }
-  return project;
+  if (typeof args.project === "string") return args.project;
+  if (STORE_SCOPE === "project" && STORE_ROOT) return basename(STORE_ROOT);
+  const inferred = basename(process.cwd());
+  console.error(`WARN: --project not specified for the global store; inferred "${inferred}" from cwd. Pass --project explicitly — a global read/leave can target the wrong lineage.`);
+  return inferred;
 }
 
 // Concurrency: a workflow's fan-out can have many agents leave at once. Serialize appends
@@ -95,7 +175,7 @@ function resolveProject(args) {
 // never interleaves/corrupts. A crashed holder's lock is broken after 5s.
 async function withLock(fn) {
   const lockDir = join(STORE_DIR, ".lock");
-  await mkdir(STORE_DIR, { recursive: true });
+  await ensureStoreDir();
   for (;;) {
     try {
       await mkdir(lockDir); // atomic create; throws EEXIST while another holder has it
@@ -194,7 +274,10 @@ async function cmdList(args) {
   const scoped = typeof args.project === "string";
   if (scoped) notes = notes.filter((n) => n.project === args.project);
   if (!notes.length) { console.log("(store empty)"); return; }
-  console.log(scoped ? `── ${args.project} ──` : "── all projects (--project to scope) ──");
+  const header = scoped ? `── ${args.project} ──`
+    : STORE_SCOPE === "global" ? "── global store (all projects) ──"
+    : `── ${STORE_ROOT ? basename(STORE_ROOT) : "project"} store ──`;
+  console.log(header);
   const byProj = {};
   for (const n of notes) {
     byProj[n.project] ??= {};
@@ -260,23 +343,46 @@ async function cmdVoices(args) {
 
 const HELP = `marginalia — persistent store for sub-agent marginalia & witness (3 kinds)
 
-  leave   --location <loc> --body <text> [--kind note|voice|witness] [--project P] [--author A] [--tags a,b]
-  read    [--location <loc>] [--kind K] [--all-kinds] [--project P] [--limit N] [--since ISO] [--all]
+  leave   --location <loc> --body <text> [--kind note|voice|witness] [--author A] [--tags a,b]
+  read    [--location <loc>] [--kind K] [--all-kinds] [--limit N] [--since ISO] [--all]
           (operational register — defaults to --kind note; use --all-kinds to include voice/witness)
-  voices  [--project P] [--recent N=3] [--random M=2] [--kind K]   ← paste into a spawning agent's prompt
-  list    [--project P]   ← bird's-eye overview; GLOBAL by default, --project to scope
+  voices  [--recent N=3] [--random M=2] [--kind K]   ← paste into a spawning agent's prompt
+  list    [--all]   ← bird's-eye overview of the current store
+
+store selection (leak-safe — the DIRECTORY is the project boundary):
+  (default)            the .claude/marginalia/ of the repo you're in (walk up to the repo root)
+  --global             the shared ~/.claude/marginalia store — OPT-IN; never a silent fallback
+  --store <repo-root>  target a specific project's store explicitly (for orchestrators)
+  --project P          label for a note's project field (auto-derived from the repo root otherwise)
 
 kinds:  note ① operational (optional/landmine) · voice ② experiential (+communion; chosen name or anon) · witness ③ to-human (tweet)
-store:  ~/.claude/marginalia/store.jsonl
+store:  <repo>/.claude/marginalia/store.jsonl  (per project, gitignored by default) — or ~/.claude/marginalia with --global
 color:  witness③ (the line to you) prints in its own standout color + ✉ marker. Auto-off when
         piped or NO_COLOR is set; --color / --no-color to force.
-note:   --project defaults to the basename of the current directory.
 
 VERIFY BEFORE ACTING — a note is a CLAIM from when it was written, not ground truth.
 Grep/Read to confirm before you rely on it. (Same epistemics as cross-session memory.)`;
 
 const args = parseArgs(process.argv.slice(2));
 const cmd = args._[0] || "help";
+
+// Resolve the store before any command that touches it (help/usage don't).
+if (cmd !== "help") {
+  const resolved = resolveStoreDir(args);
+  if (!resolved) {
+    console.error(
+      `marginalia: no project store found.\n` +
+      `  cwd is ${process.cwd()}\n` +
+      `  — no git repo (.git) found by walking up from here.\n` +
+      `  Run inside a project repo, pass --store <repo-root>, or use --global for the shared store.`
+    );
+    process.exit(2);
+  }
+  STORE_DIR = resolved.dir;
+  STORE = join(STORE_DIR, "store.jsonl");
+  STORE_SCOPE = resolved.scope;
+  STORE_ROOT = resolved.root;
+}
 
 try {
   if (cmd === "leave") await cmdLeave(args);

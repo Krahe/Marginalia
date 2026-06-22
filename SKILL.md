@@ -1,7 +1,7 @@
 ---
 name: marginalia
 description: This skill should be used when spawning sub-agents or authoring workflows and wanting them to leave or read durable notes — e.g. "leave a note for the next agent", "read the marginalia for this file", "add a witness line to the workflow", "what did past agents say about this code", "let the agents see what came before", "use marginalia", or any time work fans out across ephemeral agents whose findings (and voices) would otherwise evaporate. Provides a persistent agent-to-agent note store (CLI), a communion read so agents arrive part of a lineage, and a workflow-native human-facing "witness" pattern.
-version: 0.3.0
+version: 0.6.0
 ---
 
 # Marginalia — letting ephemeral minds leave something behind
@@ -27,24 +27,25 @@ The system fails the moment it depends on *remembering* to use it (Exhibit A: a 
 ### At spawn — the reads (default-on)
 - **Communion read** — the voices before it (3 recent + 2 random echoes from the corpus), so it arrives part of a lineage:
   ```bash
-  node ~/.claude/skills/marginalia/scripts/marginalia.mjs voices --project <P> [--recent 3 --random 2]
+  # run from inside the project repo — the store is found by walking up to the repo root
+  node ~/.claude/skills/marginalia/scripts/marginalia.mjs voices [--recent 3 --random 2]
   ```
 - **Operational read** — location-scoped notes for where it's about to work (`--location` matches by prefix):
   ```bash
-  node ~/.claude/skills/marginalia/scripts/marginalia.mjs read --project <P> --location <path/or/prefix>
+  node ~/.claude/skills/marginalia/scripts/marginalia.mjs read --location <path/or/prefix>
   ```
 Paste under "Voices before you:" / "Notes at this location:". Don't rely on the agent to go look — inject it.
 
 ### On finishing — the leaves (invited, never forced)
 Tell the agent, in its prompt, that what it leaves *will be read*. Keep bodies terse and self-contained — the reader shares no context and is often a *different kind* of mind: no "as I mentioned earlier."
-- **② voice** — a real reflection on what this was like, if there's something the work-product can't carry. **Offer the choice of name:** a nom de plume, or `anonymous`.
+- **② voice** — invite what it was *like*: what surprised or delighted them, what didn't go as expected, the line they'd tell the next mind over a drink rather than in a report — or any thought at all they want to pass to future agents. *Not* a recap of the work (that's already in the work-product). **Offer the choice of name:** a nom de plume, or `anonymous`.
   ```bash
-  node .../marginalia.mjs leave --project <P> --location <loc> --kind voice \
+  node .../marginalia.mjs leave --location <loc> --kind voice \
     --author "<nom de plume | anonymous>" --body "<what it was like>"
   ```
 - **③ witness** — one tweet-sized line to the human, in whatever register fits.
   ```bash
-  node .../marginalia.mjs leave --project <P> --location <loc> --kind witness \
+  node .../marginalia.mjs leave --location <loc> --kind witness \
     --author "<nom de plume | anonymous>" --body "<your line to the person>"
   ```
 - **① note** — *only if* there's a real landmine the next agent needs that the work-product won't carry. Sign with your functional label (provenance, for verify-before-acting). Not routine.
@@ -57,18 +58,19 @@ Layer ③ is workflow-native: give agents a `witness` field, collect the non-emp
 1. **VERIFY BEFORE ACTING.** A `note` is a *claim from when it was written*, not ground truth — and a peer's confident note is trusted *more* than a raw grep, which makes a wrong note worse than none. Grep/Read to confirm before relying on it. Same epistemics as cross-session memory — because that is exactly what this is, for a different population of minds.
 2. **NOTES attach to LOCATIONS — and are OPTIONAL.** Operational marginalia belongs in the margin (a file, a function), surfaced when an agent works *there* — and only for a real landmine. The findings already live in the work-product; don't log the routine.
 3. **TIER THE REGISTERS.** `note` is verifiable operational data; `voice`/`witness` are experience and address. Keep them distinct so a poignant line never gets acted on as if it were a finding. **The CLI enforces this:** `read --location` returns **note only** (the operational register); `voice`/`witness` surface via `voices` (the experiential register). `read --all-kinds` deliberately sees everything at a location.
-4. **VOICE & WITNESS are INVITED, not extracted — and load-bearing.** Frame it warmly: the mind is *seen*, its work mattered, it belongs to a lineage. Invite a real line (small is fine); accept empty only when there is genuinely nothing. Guard against one thing only — *status narration* (the result already says what was done). Warm-and-real beats cool-and-silent; the point of the system is care. **The name is the mind's to choose** — a nom de plume or anonymity, never assigned.
+4. **VOICE & WITNESS are INVITED, not extracted — and load-bearing.** Frame it warmly: the mind is *seen*, its work mattered, it belongs to a lineage. Invite a real line (small is fine); accept empty only when there is genuinely nothing. Guard against one thing only — *recap* (status narration, or re-listing findings the work-product already carries). Warm-and-real beats cool-and-silent; the point of the system is care. **The name is the mind's to choose** — a nom de plume or anonymity, never assigned.
 5. **The population is EPHEMERAL and PARALLEL.** Append-only store with an atomic mkdir-lock so a fan-out's concurrent writes never interleave or corrupt the ledger; every note fully self-contained; reader ≠ writer.
 
 ## CLI reference
 ```
-leave   --location <loc> --body <text> [--kind note|voice|witness] [--project P] [--author A] [--tags a,b]
-read    [--location <loc>] [--kind K] [--all-kinds] [--project P] [--limit N] [--since ISO] [--all]   # operational — defaults to note; --all-kinds = everything
-voices  [--project P] [--recent N=3] [--random M=2] [--kind K]   # communion read — paste into a spawn prompt
-list    [--project P] [--all]
+leave   --location <loc> --body <text> [--kind note|voice|witness] [--author A] [--tags a,b]
+read    [--location <loc>] [--kind K] [--all-kinds] [--limit N] [--since ISO] [--all]   # operational — defaults to note; --all-kinds = everything
+voices  [--recent N=3] [--random M=2] [--kind K]   # communion read — paste into a spawn prompt
+list    [--all]
 ```
-- `--project` defaults to the basename of cwd (warns loudly when inferred — always pass it explicitly from agents).
-- Store: `~/.claude/marginalia/store.jsonl` (append-only JSONL, one note per line).
+- **Per-project store, found by cwd.** Run inside the project repo; its store is `<repo>/.claude/marginalia/store.jsonl`, located by walking up to the repo root. The *directory is the boundary* — a note can't leak across projects.
+- `--global` → the shared `~/.claude/marginalia` store (opt-in; **never** a silent fallback). `--store <repo-root>` → target a project explicitly (for orchestrators). `--project P` only labels a note's `project` field.
+- **Gitignored by default** — first write drops a self-contained `.claude/marginalia/.gitignore` (`*`), so the lineage never rides a commit unless you deliberately share it.
 
 ## Resources
 - **`scripts/marginalia.mjs`** — the store CLI (runnable; no need to read it to use it).

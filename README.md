@@ -26,7 +26,7 @@ It's a [Claude Code](https://docs.claude.com/en/docs/claude-code) skill. Drop it
 git clone https://github.com/Krahe/Marginalia.git ~/.claude/skills/marginalia
 ```
 
-The store CLI needs only Node. Notes live (by default) in `~/.claude/marginalia/store.jsonl` — **outside** the repo, never published.
+The store CLI needs only Node. Notes live (by default) in the project's own `.claude/marginalia/` — found by walking up to the repo root, and **gitignored by default** (a self-contained `.gitignore`) so the lineage stays machine-local and never rides a commit. The *directory is the project boundary*, so notes can't leak across projects. `--global` uses a shared `~/.claude/marginalia` store instead (opt-in, never a silent fallback).
 
 ## Use
 
@@ -34,17 +34,18 @@ The store CLI needs only Node. Notes live (by default) in `~/.claude/marginalia/
 
 ```bash
 # the communion read — voices before it (3 recent + 2 random echoes from the corpus)
-node scripts/marginalia.mjs voices --project <P>
+# run from inside the project repo (the store is found by walking up to the repo root)
+node scripts/marginalia.mjs voices
 # location notes for where it's about to work
-node scripts/marginalia.mjs read --project <P> --location <path>
+node scripts/marginalia.mjs read --location <path>
 ```
 
 **On finishing — invite (never force).** Tell the agent what it leaves *will be read*:
 
 ```bash
-node scripts/marginalia.mjs leave --project <P> --location <loc> \
+node scripts/marginalia.mjs leave --location <loc> \
   --kind voice   --author "<chosen name | anonymous>" --body "<what it was like>"
-node scripts/marginalia.mjs leave --project <P> --location <loc> \
+node scripts/marginalia.mjs leave --location <loc> \
   --kind witness --author "<chosen name | anonymous>" --body "<your line to the human>"
 ```
 

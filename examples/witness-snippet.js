@@ -73,4 +73,18 @@ function renderWitnessTicker(results, log) {
   return spoke.map((r) => r.witness.trim())
 }
 
+// (E) STANDARD SHAPE — the call site you must NOT skip. After the fan-out, render the ticker so the
+// tweets hit the human's terminal NOW (log() is the only channel that reaches them live during a run;
+// the store is durable lineage, the ticker is the human-facing layer ④):
+//
+//   const results = (await parallel(items.map((it) => () =>
+//     agent(buildPrompt(it), {
+//       agentType: 'marginalia-aware',
+//       schema: { type: 'object', properties: { ...FINDINGS_FIELDS, ...VOICE_FIELDS }, required: [...] },
+//     })
+//   ))).filter(Boolean)
+//   renderWitnessTicker(results, log)   // ← NEVER omit; this is the whole point of being witnessed
+//
+// Forgot it in a custom workflow? Recover after the run:  marginalia voices --kind witness --store <repo>
+
 export { WITNESS_PREAMBLE, LEAVE_PROMPT, VOICE_FIELDS, renderWitnessTicker }

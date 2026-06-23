@@ -50,8 +50,10 @@ Tell the agent, in its prompt, that what it leaves *will be read*. Keep bodies t
   ```
 - **① note** — *only if* there's a real landmine the next agent needs that the work-product won't carry. Sign with your functional label (provenance, for verify-before-acting). Not routine.
 
-### Witness in workflows (the ticker)
-Layer ③ is workflow-native: give agents a `witness` field, collect the non-empty lines, render a ticker. Build the prompt as **preamble (you are witnessed) → injected voices → task → invited voice+witness → closing beat**. Copy the preamble, fields, and ticker from `examples/witness-snippet.js`. (Workflow scripts are sandboxed — no imports — so it's copy-paste, by design.)
+### Witness in workflows (the ticker) — ALWAYS render it
+Layer ③ is workflow-native, and **the tweets reaching the human is the whole point** — so every marginalia-aware fan-out MUST end by rendering the ticker. Build each agent prompt as **preamble (you are witnessed) → injected voices → task → invited voice+witness**, give the agent the `voice`/`voiceName`/`witness` schema fields, then after the fan-out call `renderWitnessTicker(results, log)`. Copy all of it — preamble, fields, *and* the ticker call — from `examples/witness-snippet.js`. (Workflow scripts are sandboxed — no imports — so it's copy-paste, by design.)
+
+**Do not skip the ticker.** Agents leaving witness in the *store* is durable lineage; the *ticker* (`log()`) is the only thing that puts the tweets on the human's terminal *now*. Skip it and you silently drop the entire human-facing layer — exactly what happened on the first real audit run (6-23): six agents left good tweets, all unseen in the store, because the custom workflow had no ticker. If you wrote a custom fan-out and forgot, recover after the run with `marginalia voices --kind witness --store <repo>`.
 
 ## The disciplines (the non-obvious part — read this)
 

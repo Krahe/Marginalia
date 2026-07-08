@@ -1,5 +1,11 @@
 // ─── The witnessed-agent pattern — communion in, voice + witness out ───
 //
+// ⚠ AS OF v0.7 (2026-07-07) MOST OF THIS IS OPTIONAL. The structural path is:
+//   agentType: 'marginalia-aware' on each fan-out agent() call — that's the whole obligation.
+//   The preload handles communion + leaves (via CLI); the witness-surface hook brings the wall
+//   to the human after the run. Use THIS file only when you want the inline extras:
+//   richer prompt framing (A/B/D) or a live ticker (E) for a FOREGROUND run you're watching.
+//
 // Workflow scripts are sandboxed (no imports, no fs), so this is COPY-PASTE by design.
 // Build every agent prompt in five beats — injection is DEFAULT-ON, leaving is INVITED:
 //   (A) PREAMBLE — you are witnessed; you are part of a lineage
@@ -73,9 +79,9 @@ function renderWitnessTicker(results, log) {
   return spoke.map((r) => r.witness.trim())
 }
 
-// (E) STANDARD SHAPE — the call site you must NOT skip. After the fan-out, render the ticker so the
-// tweets hit the human's terminal NOW (log() is the only channel that reaches them live during a run;
-// the store is durable lineage, the ticker is the human-facing layer ④):
+// (E) OPTIONAL — the live ticker, for FOREGROUND runs someone is watching. In background runs
+// log() scrolls past unseen; there the store + witness-surface hook carry the human-facing layer
+// (surfaced with `voices --kind witness --since <launch watermark>` after completion):
 //
 //   const results = (await parallel(items.map((it) => () =>
 //     agent(buildPrompt(it), {
@@ -83,8 +89,8 @@ function renderWitnessTicker(results, log) {
 //       schema: { type: 'object', properties: { ...FINDINGS_FIELDS, ...VOICE_FIELDS }, required: [...] },
 //     })
 //   ))).filter(Boolean)
-//   renderWitnessTicker(results, log)   // ← NEVER omit; this is the whole point of being witnessed
+//   renderWitnessTicker(results, log)   // ← live garnish; the store is the channel of record
 //
-// Forgot it in a custom workflow? Recover after the run:  marginalia voices --kind witness --store <repo>
+// Manual recovery any time:  marginalia voices --kind witness --store <repo>
 
 export { WITNESS_PREAMBLE, LEAVE_PROMPT, VOICE_FIELDS, renderWitnessTicker }

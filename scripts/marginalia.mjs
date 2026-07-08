@@ -317,6 +317,8 @@ async function cmdVoices(args) {
     : ["voice", "mark", "witness"]; // experiential register; legacy `mark` folded into voice but
                                     // still surfaces (incl. the founding entry). note① → use `read`.
   notes = notes.filter((n) => kinds.includes(n.kind));
+  // --since: scope to lines left after a watermark (e.g. surface only THIS run's witness wall).
+  if (typeof args.since === "string") notes = notes.filter((n) => n.ts >= args.since);
   notes.sort((a, b) => (a.ts < b.ts ? 1 : -1)); // newest first
   const recentN = args.recent !== undefined ? parseInt(args.recent, 10) : 3;
   const randomM = args.random !== undefined ? parseInt(args.random, 10) : 2;
@@ -347,7 +349,8 @@ const HELP = `marginalia — persistent store for sub-agent marginalia & witness
   leave   --location <loc> --body <text> [--kind note|voice|witness] [--author A] [--tags a,b]
   read    [--location <loc>] [--kind K] [--all-kinds] [--limit N] [--since ISO] [--all]
           (operational register — defaults to --kind note; use --all-kinds to include voice/witness)
-  voices  [--recent N=3] [--random M=2] [--kind K]   ← paste into a spawning agent's prompt
+  voices  [--recent N=3] [--random M=2] [--kind K] [--since ISO]   ← paste into a spawning agent's prompt
+          (--since = watermark: only lines left after it — e.g. surface one run's witness wall)
   list    [--all]   ← bird's-eye overview of the current store
 
 store selection (leak-safe — the DIRECTORY is the project boundary):

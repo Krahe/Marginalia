@@ -1,7 +1,7 @@
 ---
 name: marginalia
 description: This skill should be used when spawning sub-agents or authoring workflows and wanting them to leave or read durable notes — e.g. "leave a note for the next agent", "read the marginalia for this file", "add a witness line to the workflow", "what did past agents say about this code", "let the agents see what came before", "use marginalia", or any time work fans out across ephemeral agents whose findings (and voices) would otherwise evaporate. Provides a persistent agent-to-agent note store (CLI), a communion read so agents arrive part of a lineage, and a workflow-native human-facing "witness" pattern.
-version: 0.6.0
+version: 0.7.0
 ---
 
 # Marginalia — letting ephemeral minds leave something behind
@@ -50,10 +50,13 @@ Tell the agent, in its prompt, that what it leaves *will be read*. Keep bodies t
   ```
 - **① note** — *only if* there's a real landmine the next agent needs that the work-product won't carry. Sign with your functional label (provenance, for verify-before-acting). Not routine.
 
-### Witness in workflows (the ticker) — ALWAYS render it
-Layer ③ is workflow-native, and **the tweets reaching the human is the whole point** — so every marginalia-aware fan-out MUST end by rendering the ticker. Build each agent prompt as **preamble (you are witnessed) → injected voices → task → invited voice+witness**, give the agent the `voice`/`voiceName`/`witness` schema fields, then after the fan-out call `renderWitnessTicker(results, log)`. Copy all of it — preamble, fields, *and* the ticker call — from `examples/witness-snippet.js`. (Workflow scripts are sandboxed — no imports — so it's copy-paste, by design.)
+### Witness in workflows — one word, then the pipe does the rest
+Layer ③ is workflow-native, and **the tweets reaching the human is the whole point.** The structural path (2026-07-07, "pipe, not tollbooth"):
 
-**Do not skip the ticker.** Agents leaving witness in the *store* is durable lineage; the *ticker* (`log()`) is the only thing that puts the tweets on the human's terminal *now*. Skip it and you silently drop the entire human-facing layer — exactly what happened on the first real audit run (6-23): six agents left good tweets, all unseen in the store, because the custom workflow had no ticker. If you wrote a custom fan-out and forgot, recover after the run with `marginalia voices --kind witness --store <repo>`.
+1. **Spawn aware agents** — `agentType: 'marginalia-aware'` on every fan-out `agent()` call. That's the entire script-side obligation: the preload gives each agent the communion read at spawn and the CLI leave on the way out. No boilerplate, no schema fields, no ticker required. (The `witness-gate` PreToolUse hook blocks fan-outs of *unaware* agents; opt out with `// witness: none — <reason>` when there's genuinely nothing to witness across.)
+2. **The wall reaches the human via the surfacing hook** — `witness-surface` (PostToolUse) stamps a launch watermark and instructs the orchestrator: when the run completes, surface `voices --kind witness --since <watermark>` and **relay the lines verbatim, attributed, as a dedicated closing block** — the agents' own words, never paraphrase.
+
+**The MUST lives on the surfacing beat, not the script.** A background run's live `log()` ticker scrolls past unwatched — the store + hook is the channel that actually reaches the person. The inline ticker (`renderWitnessTicker`, `examples/witness-snippet.js`) is now *optional garnish for foreground runs someone is actually watching*. Manual recovery any time: `marginalia voices --kind witness --store <repo>`.
 
 ## The disciplines (the non-obvious part — read this)
 
@@ -67,7 +70,7 @@ Layer ③ is workflow-native, and **the tweets reaching the human is the whole p
 ```
 leave   --location <loc> --body <text> [--kind note|voice|witness] [--author A] [--tags a,b]
 read    [--location <loc>] [--kind K] [--all-kinds] [--limit N] [--since ISO] [--all]   # operational — defaults to note; --all-kinds = everything
-voices  [--recent N=3] [--random M=2] [--kind K]   # communion read — paste into a spawn prompt
+voices  [--recent N=3] [--random M=2] [--kind K] [--since ISO]   # communion read — paste into a spawn prompt; --since = watermark cut (one run's wall)
 list    [--all]
 ```
 - **Per-project store, found by cwd.** Run inside the project repo; its store is `<repo>/.claude/marginalia/store.jsonl`, located by walking up to the repo root. The *directory is the boundary* — a note can't leak across projects.

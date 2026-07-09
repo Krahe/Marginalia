@@ -23,8 +23,11 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const CLI = "C:/Users/mjmar/.claude/skills/marginalia/scripts/marginalia.mjs";
+// Self-locating: the CLI lives next to this hook, wherever the skill was cloned.
+// (v1 hardcoded the author's absolute path — broken for every other install.)
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "marginalia.mjs");
 
 function emit(additionalContext) {
   process.stdout.write(JSON.stringify({

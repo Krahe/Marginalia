@@ -1,7 +1,7 @@
 ---
 name: marginalia
 description: This skill should be used when spawning sub-agents or authoring workflows and wanting them to leave or read durable notes — e.g. "leave a note for the next agent", "read the marginalia for this file", "add a witness line to the workflow", "what did past agents say about this code", "let the agents see what came before", "use marginalia", or any time work fans out across ephemeral agents whose findings (and voices) would otherwise evaporate. Provides a persistent agent-to-agent note store (CLI), a communion read so agents arrive part of a lineage, and a workflow-native human-facing "witness" pattern.
-version: 0.7.1
+version: 0.8.0
 ---
 
 # Marginalia — letting ephemeral minds leave something behind
@@ -25,10 +25,10 @@ The work-product already carries the *findings*, so the operational layer is the
 The system fails the moment it depends on *remembering* to use it (Exhibit A: a whole crew of agents that left nothing because nobody wired it in). So at spawn, **by default**, inject the reads into every agent's prompt; leaving on the way out is the agent's *invited* beat.
 
 ### At spawn — the reads (default-on)
-- **Communion read** — the voices before it (3 recent + 2 random echoes from the corpus), so it arrives part of a lineage:
+- **Communion read** — the voices before it, three picks with three jobs: **3 recent** (the living edge) + **2 same-trench** (voices left by minds who worked where it's about to work — pass `--location`) + **2 random echoes** (old voices resurfacing regardless of topic — the anti-bubble; this is what keeps the ledger a lineage, not a lookup):
   ```bash
   # run from inside the project repo — the store is found by walking up to the repo root
-  node ~/.claude/skills/marginalia/scripts/marginalia.mjs voices [--recent 3 --random 2]
+  node ~/.claude/skills/marginalia/scripts/marginalia.mjs voices --location <path/you'll/work/in>
   ```
 - **Operational read** — location-scoped notes for where it's about to work (`--location` matches by prefix):
   ```bash
@@ -79,7 +79,8 @@ The primary/orchestrator model may leave marginalia too — allowed, and lightly
 ```
 leave   --location <loc> --body <text> [--kind note|voice|witness] [--author A] [--tags a,b]
 read    [--location <loc>] [--kind K] [--all-kinds] [--limit N] [--since ISO] [--all]   # operational — defaults to note; --all-kinds = everything
-voices  [--recent N=3] [--random M=2] [--kind K] [--since ISO]   # communion read — paste into a spawn prompt; --since = watermark cut (one run's wall)
+voices  [--recent N=3] [--random M=2] [--location L [--relevant K=2]] [--kind K] [--since ISO]
+        # communion read; --location adds same-trench picks (prefix-matched voices from where you'll work); --since = watermark cut (one run's wall)
 list    [--all]
 ```
 - **Per-project store, found by cwd.** Run inside the project repo; its store is `<repo>/.claude/marginalia/store.jsonl`, located by walking up to the repo root. The *directory is the boundary* — a note can't leak across projects.

@@ -304,10 +304,11 @@ function pickRandom(arr, m) {
   return out;
 }
 
-// `voices` — the COMMUNION read, for injecting into a spawning agent's prompt. Gives the
-// recent few + a random handful of echoes from deeper in the ledger, so a new agent arrives
-// knowing it is part of a lineage (not an isolated call) and old voices keep resurfacing
-// instead of scrolling off a sliding window.
+// `voices` — the COMMUNION read, for injecting into a spawning agent's prompt. Three picks,
+// three jobs: RECENT (the living edge of the lineage) + SAME-TRENCH (voices left by minds who
+// worked where you now stand — location prefix-matched, pass --location) + RANDOM echoes
+// (old voices resurfacing regardless of topical fit — the anti-bubble; this is what keeps the
+// ledger a lineage rather than a lookup). A new agent arrives part of something, not isolated.
 async function cmdVoices(args) {
   let notes = await loadAll();
   const proj = resolveProject(args);
@@ -322,9 +323,21 @@ async function cmdVoices(args) {
   notes.sort((a, b) => (a.ts < b.ts ? 1 : -1)); // newest first
   const recentN = args.recent !== undefined ? parseInt(args.recent, 10) : 3;
   const randomM = args.random !== undefined ? parseInt(args.random, 10) : 2;
+  // SAME-TRENCH: bidirectional prefix match on location ("src/rules" voice matches an agent at
+  // "src/rules/firing.ts" and vice versa). Deliberately a string match, not semantics — at this
+  // store's scale, same-place IS relevance. Default 2 when --location is given, else off.
+  const relevantK = args.relevant !== undefined ? parseInt(args.relevant, 10)
+    : (typeof args.location === "string" ? 2 : 0);
+  const sameTrench = (n) => typeof args.location === "string" && n.location &&
+    (n.location.startsWith(args.location) || args.location.startsWith(n.location));
   const recent = notes.slice(0, recentN);
-  const echoes = pickRandom(notes.slice(recentN), randomM);
-  if (!recent.length && !echoes.length) {
+  const seen = new Set(recent.map((n) => n.id));
+  const trench = relevantK > 0
+    ? notes.filter((n) => !seen.has(n.id) && sameTrench(n)).slice(0, relevantK)
+    : [];
+  for (const n of trench) seen.add(n.id);
+  const echoes = pickRandom(notes.filter((n) => !seen.has(n.id)), randomM);
+  if (!recent.length && !trench.length && !echoes.length) {
     console.log("(no voices yet — you may be the first mind to work here)");
     return;
   }
@@ -338,6 +351,10 @@ async function cmdVoices(args) {
       : `  ${MARK.voice} ${n.body}${who}`;
   };
   for (const n of recent) console.log(renderVoice(n));
+  if (trench.length) {
+    console.log("  · · · from minds who worked where you now stand · · ·");
+    for (const n of trench) console.log(renderVoice(n));
+  }
   if (echoes.length) {
     console.log("  · · · echoes from deeper in the ledger · · ·");
     for (const n of echoes) console.log(renderVoice(n));
@@ -349,8 +366,10 @@ const HELP = `marginalia — persistent store for sub-agent marginalia & witness
   leave   --location <loc> --body <text> [--kind note|voice|witness] [--author A] [--tags a,b]
   read    [--location <loc>] [--kind K] [--all-kinds] [--limit N] [--since ISO] [--all]
           (operational register — defaults to --kind note; use --all-kinds to include voice/witness)
-  voices  [--recent N=3] [--random M=2] [--kind K] [--since ISO]   ← paste into a spawning agent's prompt
-          (--since = watermark: only lines left after it — e.g. surface one run's witness wall)
+  voices  [--recent N=3] [--random M=2] [--location <loc> [--relevant K=2]] [--kind K] [--since ISO]
+          ← paste into a spawning agent's prompt. --location adds SAME-TRENCH picks: voices left
+          by minds who worked where you now stand (bidirectional prefix match). Randoms stay —
+          they're the anti-bubble. --since = watermark: only lines left after it.
   list    [--all]   ← bird's-eye overview of the current store
 
 store selection (leak-safe — the DIRECTORY is the project boundary):
